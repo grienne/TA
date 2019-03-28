@@ -1,0 +1,175 @@
+---
+title: "TableOne"
+author: "grienne"
+date: "February 24, 2019"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+Welcome to RMarkdown Documents!
+
+RMarkdown documents are how many people produce files that are shareable for efficient collaborative work!
+
+Please the annotations noted by the '#' symbol.
+
+Quick Note: Running Code
+
+2 Primary ways to quickly make the code run!
+
+1. Highlight the code then click ctrl+enter
+
+2. There is a green forward arrow in the upper right of these highlighted areas with code in them (these are called chunks btw!). Click that arrow and it will run all the code in sequential order!
+
+
+
+
+
+---Package---
+
+I have created 2 documents:
+
+1. Epi-Stats code
+2. Table One creation code
+
+In reality I do this all at once, but I created separate ones for readability. In the package code below, you will find what your packages would look like if they were all combined.
+
+Note: The MASS package is missing since I am using a different sample data set for this code template
+```{r}
+
+#specify the packages of interest
+packages = c("epiR", "tidyverse", "survival", "readr", "tableone")
+
+#use this function to check if each package is on the local machine
+#if a package is installed, it will be loaded
+#if any are not, the missing package(s) will be installed and loaded
+package.check <- lapply(packages, FUN = function(x) {
+  if (!require(x, character.only = TRUE)) {
+    install.packages(x, dependencies = TRUE)
+    library(x, character.only = TRUE)
+  }
+})
+
+#verify they are loaded
+search()
+
+data(pbc); head(pbc)
+
+#changing all variables to lowercase
+names(pbc) <- tolower(names(pbc))
+
+```
+
+
+
+```{r}
+
+## Make categorical variables factors
+
+
+##Remember in the epi_stats guide how I made columns into factors?
+##R has a lot of ways to do the same thing! Here is a way to turn multiple columns at once into factors
+##I will break this code down. Feel free to use the other method if it is easier to read and use 
+
+#This first line creates a character string with status, trt, etc listed
+varstofactor <- c("status","trt","ascites","hepato","spiders","edema","stage")
+
+
+#I won't go into detail about lapply, but basically it tells R to apply the 'as.factor' command to columns in PBC that match the ones specified in the above character string
+
+#pbc is the dataset name, 'varsToFactor' is the name of the character string. 
+pbc[varstofactor] <- lapply(pbc[varstofactor], factor)
+
+
+
+```
+
+
+
+Creating a Table One
+
+
+The tableone package is pretty awesome! It does everything you need for a tableone really quickly and efficiently.
+
+It takes a few steps to set-up, R is case sensitive and really picky about that so make sure you pay attention to your work!
+
+Don't worry, the code looks way more intimidating than it actually is!
+```{r}
+
+#Create a variable list
+##The first step is to create a list of variables you want in your tableone. Typically you want a tableone of your entire data set.
+##Now, I'm lazy and don't want to find and type all of that! So we use the below code to generate all of the column names in a format that we can copypaste for later use!
+dput(names(pbc))
+
+
+#Now to create the actual list. I am creating an object called "vars" that is a list of all of the column names copy/pasted directly from the above output
+vars <- c("time","status","age","sex","ascites","hepato",
+"spiders","edema","bili","chol","albumin",
+"copper","alk.phos","ast","trig","platelet",
+"protime","stage")
+
+#-----------------------------------------------------------------------
+
+## Create Table 1 stratified by trt
+
+tableOne <- CreateTableOne(vars = vars, strata = c("trt"), data = pbc)
+
+## Just typing the object name will invoke the print.TableOne method
+tableOne
+
+#Just like that, we're done! 
+#Now, likely the table will be a bit confusing. I prefer to change the names of the categorical variables to something legible (i.e. 1's and 2's to Males/Females etc) 
+    ##In order to do that please reference the epi_stats_guide_Rmd code template.
+```
+
+
+The next set of code helps you identify specific variables types and also a few tricks for dealing with non-normal data in a table!
+
+```{r}
+
+## Specifying nonnormal variables will show the variables appropriately,
+## and show nonparametric test p-values. Specify variables in the exact
+## argument to obtain the exact test p-values. cramVars can be used to
+## show both levels for a 2-level categorical variables.
+
+print(tableOne, nonnormal = c("bili","chol","copper","alk.phos","trig"),
+exact = c("status","stage"), cramVars = "hepato", smd = TRUE)
+
+## Use the summary.TableOne method for detailed summary
+summary(tableOne)
+
+## See the categorical part only using $ operator
+tableOne$CatTable
+summary(tableOne$CatTable)
+
+## See the continuous part only using $ operator
+tableOne$ContTable
+summary(tableOne$ContTable)
+
+```
+
+
+Important!
+
+Most of you will transfer your code from R to excel. Now this really isn't necessary, I use RMD to generate my reports, but that is kind of a pain to get into and requires some additional steps, so if you want to learn how to do that schedule time with me and we can discuss it. 
+
+For everyone else, please see the code below to make your data copy/pastable
+```{r}
+## If your work flow includes copying to Excel and Word when writing manuscripts,
+## you may benefit from the quote argument. This will quote everything so that
+## Excel does not mess up the cells.
+csv1 <- print(tableOne, nonnormal = c("bili","chol","copper","alk.phos","trig"),
+exact = c("status","stage"), quote = TRUE)
+
+#this creates the csv file
+write.csv(as.data.frame(csv1), "bwt1.csv")
+
+## If you want to center-align values in Word, use noSpaces option.
+print(tableOne, nonnormal = c("bili","chol","copper","alk.phos","trig"),
+exact = c("status","stage"), quote = TRUE, noSpaces = TRUE)
+
+## If SMDs are needed as numericals, use ExtractSmd()
+ExtractSmd(tableOne)
+```

@@ -1,0 +1,470 @@
+---
+title: "Project Part 2"
+author: "grienne"
+date: "March 26, 2019"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+###Packages
+
+```{r Packages, message=FALSE, eval=FALSE}
+
+#specify the packages of interest
+packages = c("epiR", "tidyverse", "survival", "readr", "tableone", "purrr", "lattice")
+
+#use this function to check if each package is on the local machine
+#if a package is installed, it will be loaded
+#if any are not, the missing package(s) will be installed and loaded
+package.check <- lapply(packages, FUN = function(x) {
+  if (!require(x, character.only = TRUE)) {
+    install.packages(x, dependencies = TRUE)
+    library(x, character.only = TRUE)
+  }
+})
+
+
+```
+
+###Loading Data
+
+
+Loading Data in R can be intensive, but luckily RStudio makes this fairly easy!
+
+The link below is a website that will guide you through that process in RStudio.
+
+Loading Data: [link]https://support.rstudio.com/hc/en-us/articles/218611977-Importing-Data-with-RStudio 
+
+When you load a data file, I encourage you to rename it to something clear and short!
+The code below does 2 things:
+    1. I take the loaded dataset rename it to dat1 'dat1 <- academic_dataset_arc.csv'
+        *Note: You can rename it however you want*
+    2. I take a quick look at the dataset to make sure it looks okay 'head(dat1)'
+
+
+```{r eval=FALSE}
+
+dat1 <- read_csv("academic_dataset_aric.csv"); head(dat1)
+names(dat1) <- tolower(names(dat1))
+
+#I removed the enddate and dated11 column as it lengthened the output significantly
+drop.cols <- c("c7_enddate", "dated11")
+dat2 <- dat1 %>% 
+        select(-one_of(drop.cols))
+
+dat3 <- dat2 %>%
+        select(v1age01, bmi01, gender, racegrp, hyptmd01, diabts03, hdlsiu02, ldlsiu02, tchsiu01, trgsiu01, fast0802, cigt01, prvchd05, center, c7_inc_by11, c7_futime)
+
+```
+
+
+
+####Question 1 - Descriptive Statistics
+
+The code below generates descriptive statistics for the dataset we created above, including means, medians, range, and modes. 
+
+Also identifies number of NA observations.
+```{r eval=FALSE}
+
+summary(dat3)
+
+```
+
+####Question 1a - Race Removal
+```{r eval=FALSE}
+
+#removed races A & I
+dat4<- dat3 %>%
+        filter(racegrp != "A" & racegrp != "I")
+
+#turning Racegrp into a factor (i.e. making it categorical)
+dat4$racegrp <- as.factor(dat4$racegrp)
+
+#We have removed A&I so when we do summary of dat and just check the Racegrp there should only be Black and White
+summary(dat4$racegrp)
+
+#Making Center a Factor
+dat4$center <- as.factor(dat4$center)
+
+#Summarize data by Center
+#This produces descriptive statistics by Center. Including Race Counts
+dat4 %>%
+    split(.$center) %>%
+      map(summary)
+
+#remove D & B black participants 
+
+
+#Code Tip: Sometimes you have to effect change on an existing dataset. However, if you aren't sure the code will work, I will often create a subset of it
+dat_r <- dat4[!(dat4$center == "B" & dat4$racegrp == "B"),]
+dat_r <- dat4[!(dat4$center == "D" & dat4$racegrp == "B"),]
+
+#Removed 6 blacks from Center B & 13 from center D
+#I reassign dat_r to dat4 once I have verified I am okay with the outcome
+
+dat4 <- dat_r
+
+summary(dat4)
+
+#Histogram is made using the below command. 
+  #Tips
+    #To make a histogram dat3$ and select the variable of interest
+    #If you want to make a histogram by category the first variable is the continuous variable, the second is the               categorical variable
+histogram(~ dat4$hdlsiu02|dat4$racegrp)
+
+```
+
+
+####Question 1 - Race Center
+
+Here I am creating the race center variable
+```{r eval=FALSE}
+
+#Create Race Center
+dat5 <- dat4 %>%
+            mutate(race.center = ifelse(racegrp == "W" & center == "A", 1,
+                          ifelse(racegrp == "B" & center == "A", 2,
+                            ifelse(racegrp == "W" & center == "B", 3,
+                               ifelse(racegrp == "W" & center == "D", 4,
+                                  ifelse(racegrp == "B" & center == "C", 5, NA)
+                                       )))))
+
+#Factor
+#Turning multiple variables into factors/categories 
+varstofactor <- c("gender", "racegrp", "cigt01", "prvchd05", "diabts03", "c7_inc_by11")
+dat5[varstofactor] <- lapply(dat5[varstofactor], factor)
+
+#Summary
+#I am summarizing dat 5, then summarizing specific specific variables from data 5
+dat5$race.center <- as.factor(dat5$race.center)
+summary(dat5)
+summary(dat5$hyptmd01)
+summary(dat5$race.center)
+
+
+rm(dat_r); rm(dat1); rm(dat2); rm(dat3); rm(dat4)
+```
+
+
+##Epi 2x2
+
+```{r}
+summary(dat5)
+
+summary(dat5$c7_inc_by11)
+
+```
+
+Question 1 - Incidence Rates
+
+##---Incidence Rate Overall
+```{r}
+
+##Overall
+summary(dat5$c7_inc_by11)
+#4031 - 0
+#639 - 1
+
+tot <- dat5 %>%
+    group_by(c7_inc_by11) %>%
+      summarise(Total = sum(c7_futime))
+
+print(tot)
+
+#0	30122969			
+#1	2651505	
+
+
+dat <- as.table(matrix(c(639,2651505, 4031,30122969), nrow = 2, byrow = TRUE))
+rownames(dat) <- c("Exp + ", "Exp -"); colnames(dat) <- c("Disease +", "Person-Time"); dat
+
+
+rval <- epi.2by2(dat = dat, method = "cohort.time", conf.level = 0.95,
+                 units = 1000, homogeneity = "breslow.day", outcome = "as.columns")
+
+print(rval)
+
+#Incidence Rate
+#The code above generates all of the information needed
+#The next code line pulls out the incidence rate specifically
+summary(rval)$ARate.strata.wald
+
+#--------------------
+
+round(summary(rval)$IRR.strata.wald, digits = 2)
+
+
+```
+
+##Incidence Rate by Gender
+
+```{r}
+
+
+tab1 <- table(dat5$c7_inc_by11, dat5$gender, dnn = c("Myocardial Infarction", "Gender"))
+print(tab1)
+
+totg <- dat5 %>%
+    group_by(c7_inc_by11, gender) %>%
+      summarise(Total = sum(c7_futime))
+
+print(totg)
+
+#0	F	18186455	2368
+#1	F	1091282		242
+#0	M	11936514	1663	
+#1	M	1560223	  397
+
+#---Female
+#
+rate_female <- as.table(matrix(c(242, 1091282 ,2368, 18186455 ), nrow = 2, byrow = TRUE))
+rownames(rate_female) <- c("Myo + ", "Myo - "); colnames(rate_female) <- c("Disease +", "Person-Time"); rate_female
+
+
+rval_female <- epi.2by2(dat = rate_female, method = "cohort.time", conf.level = 0.95,
+                      units = 1000, homogeneity = "breslow.day", outcome = "as.columns")
+
+print(rval_female)
+
+#-----Male
+
+rate_male <- as.table(matrix(c(397, 1560223 ,1663, 11936514), nrow = 2, byrow = TRUE))
+rownames(rate_male) <- c("Myo + ", "Myo - "); colnames(rate_male) <- c("Disease +", "Person-Time"); rate_male
+
+
+rval_male <- epi.2by2(dat = rate_male, method = "cohort.time", conf.level = 0.95,
+                      units = 1000, homogeneity = "breslow.day", outcome = "as.columns")
+
+print(rval_male)
+
+#----Rate Difference
+
+1.83 - 1.70
+
+```
+
+
+##Incidence Rate by Race
+
+```{r}
+
+
+tabR <- table(dat5$c7_inc_by11, dat5$racegrp, dnn = c("Myocardial Infarction", "Race"))
+print(tabR)
+
+totR <- dat5 %>%
+    group_by(c7_inc_by11, racegrp) %>%
+      summarise(Total = sum(c7_futime))
+
+print(totR)
+
+#0	B	8205785	  1129
+#1	B	748864		178	
+#0	W	21917184	2902	
+#1	W	1902641	  461
+
+#---Black
+
+rate_black <- as.table(matrix(c(178, 748864, 1129, 8205785), nrow = 2, byrow = TRUE))
+rownames(rate_black) <- c("Myo +", "Myo -"); colnames(rate_black) <- c("Disease +", "Person-Time"); rate_black
+
+
+rval_black <- epi.2by2(dat = rate_black, method = "cohort.time", conf.level = 0.95,
+                      units = 1000, homogeneity = "breslow.day", outcome = "as.columns")
+
+print(rate_black)
+
+
+#----White
+
+rate_white <- as.table(matrix(c(461, 1902641, 2902, 21917184), nrow = 2, byrow = TRUE))
+rownames(rate_white) <- c("Myo +", "Myo -"); colnames(rate_white) <- c("Disease +", "Person-Time"); rate_white
+
+
+rval_white <- epi.2by2(dat = rate_white, method = "cohort.time", conf.level = 0.95,
+                      units = 1000, homogeneity = "breslow.day", outcome = "as.columns")
+
+print(rate_white)
+
+#---Rate Difference
+
+#Input
+
+```
+
+##Incidence Rate by Education Level --- FIX -- Which is the Education Variable
+
+```{r}
+
+
+tab1 <- table(dat5$c7_inc_by11, dat5$racegrp, dnn = c("Myocardial Infarction", "Gender"))
+print(tab1)
+
+tot <- dat5 %>%
+    group_by(c7_inc_by11, gender) %>%
+      summarise(Total = sum(c7_futime))
+
+print(tot)
+
+#0	F	18186455		
+#0	M	11936514		
+#1	F	1091282		
+#1	M	1560223	
+
+
+rate_female <- as.table(matrix(c(242, 1091282 ,397,1560223	), nrow = 2, byrow = TRUE))
+rownames(rate_female) <- c("Female ", "Male"); colnames(rate_female) <- c("Disease +", "Person-Time"); rate_female
+
+
+rval_gender <- epi.2by2(dat = rate_female, method = "cohort.time", conf.level = 0.95,
+                      units = 1000, homogeneity = "breslow.day", outcome = "as.columns")
+
+print(rval_gender)
+```
+
+
+##Incidence Rate by Diabetes Status
+
+```{r}
+
+
+tabD <- table(dat5$c7_inc_by11, dat5$diabts03, dnn = c("Myocardial Infarction", "Diabetes"))
+print(tabD)
+
+totD <- dat5 %>%
+    group_by(c7_inc_by11, diabts03) %>%
+      summarise(Total = sum(c7_futime))
+
+print(totD)
+
+#0	0	27361132 3606		
+#0	1	2489190	 387
+#1	D0	2049250 478		
+#1	D1	574243 155	
+
+#--Diabetes
+dat_diab_p <- as.table(matrix(c(155, 574243 , 478, 2049250	), nrow = 2, byrow = TRUE))
+rownames(dat_diab_p) <- c("Myo + ", "Myo -"); colnames(dat_diab_p) <- c("Disease +", "Person-Time"); dat_diab_p
+
+
+rval_diab_p <- epi.2by2(dat = dat_diab_p, method = "cohort.time", conf.level = 0.95,
+                      units = 1000, homogeneity = "breslow.day", outcome = "as.columns")
+
+print(rval_diab_p)
+
+
+#--No Diabetes
+dat_diab_n <- as.table(matrix(c(155, 574243 , 478, 2049250	), nrow = 2, byrow = TRUE))
+rownames(dat_diab_n) <- c("Myo + ", "Myo -"); colnames(dat_diab_n) <- c("Disease -", "Person-Time"); dat_diab_n
+
+
+rval_diab_n <- epi.2by2(dat = dat_diab_n, method = "cohort.time", conf.level = 0.95,
+                      units = 1000, homogeneity = "breslow.day", outcome = "as.columns")
+
+print(rval_diab_n)
+
+#---Rate Difference
+
+```
+
+
+#Incidence Ratios
+
+
+##Incidence Ratio by Gender
+```{r}
+
+
+tab_gender <- table(dat5$c7_inc_by11, dat5$gender, dnn = c("Myocardial", "Gender"))
+print(tab_gender)
+
+
+## Compute the crude odds ratio, the Mantel-Haenszel adjusted odds ratio
+## and other measures of association:
+eval_gender <- epi.2by2(dat = tab_gender, method = "case.control",
+                 conf.level = 0.95, units = 100, homogeneity = "breslow.day",
+                 outcome = "as.columns")
+
+print(eval_gender)
+
+#Generate The OR per strata with confidence intervals
+eval_gender$res$OR.strata.wald
+
+```
+
+
+##Incidence Ratio by Race
+```{r}
+
+
+tab_race <- table(dat5$c7_inc_by11, dat5$racegrp, dnn = c("Myocardial", "Race"))
+print(tab_race)
+
+
+## Compute the crude odds ratio, the Mantel-Haenszel adjusted odds ratio
+## and other measures of association:
+eval_race <- epi.2by2(dat = tab_race, method = "case.control",
+                 conf.level = 0.95, units = 100, homogeneity = "breslow.day",
+                 outcome = "as.columns")
+
+print(eval_race)
+
+#Generate The OR per strata with confidence intervals
+eval_race$res$OR.strata.wald
+
+
+```
+
+
+##Incidence Ratio by Education --- FIX
+```{r}
+
+
+tab_gender <- table(dat5$c7_inc_by11, dat5$gender, dnn = c("Myocardial", "Gender"))
+print(tab_gender)
+
+
+## Compute the crude odds ratio, the Mantel-Haenszel adjusted odds ratio
+## and other measures of association:
+eval_gender <- epi.2by2(dat = tab_gender, method = "case.control",
+                 conf.level = 0.95, units = 100, homogeneity = "breslow.day",
+                 outcome = "as.columns")
+
+print(eval_gender)
+
+#Generate The OR per strata with confidence intervals
+rval$res$OR.strata.wald
+
+
+```
+
+
+##Incidence Ratio by Diabetes
+```{r}
+
+
+tab_diab <- table(dat5$c7_inc_by11, dat5$diabts03, dnn = c("Myocardial", "Diabetes"))
+print(tab_gender)
+
+
+## Compute the crude odds ratio, the Mantel-Haenszel adjusted odds ratio
+## and other measures of association:
+eval_diab <- epi.2by2(dat = tab_diab, method = "case.control",
+                 conf.level = 0.95, units = 100, homogeneity = "breslow.day",
+                 outcome = "as.columns")
+
+print(eval_diab)
+
+#Generate The OR per strata with confidence intervals
+eval_diab$res$OR.strata.wald
+
+
+```
+
+
+
+
+
